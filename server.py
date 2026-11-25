@@ -65,6 +65,7 @@ def _sync_profiles_to_github() -> tuple[bool, str]:
     """Commit profiles.json (and docs/) and push cleanly to origin/main."""
     env = os.environ.copy()
     env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_EDITOR"] = "true"
 
     def _git(*args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -88,9 +89,8 @@ def _sync_profiles_to_github() -> tuple[bool, str]:
 
         pull = _git("pull", "--rebase", "--autostash", "origin", "main")
         if pull.returncode != 0:
-            # Resolve docs/data.json conflict if cloud updated simultaneously
-            _git("checkout", "--theirs", "docs/data.json")
-            _git("add", "docs/data.json")
+            _git("checkout", "--theirs", "docs/data.json", "docs/index.html")
+            _git("add", "docs/data.json", "docs/index.html")
             _git("rebase", "--continue")
 
         push = _git("push", "origin", "main")
