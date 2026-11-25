@@ -5,6 +5,12 @@ on:
     # Run every 15 minutes (UTC)
     - cron: "*/15 * * * *"
   workflow_dispatch:
+    inputs:
+      test_notify:
+        description: "勾选后立即发送一条测试推送到微信/手机（验证通道是否连通）"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -32,6 +38,19 @@ jobs:
           key: g83-radar-db-${{ github.run_id }}
           restore-keys: |
             g83-radar-db-
+
+      - name: Send test notification (when manually requested)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_notify }}
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          BARK_URL: ${{ secrets.BARK_URL }}
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scan_once.py --test-notify
 
       - name: Run Yahoo Auctions G83 Radar scan
         env:
