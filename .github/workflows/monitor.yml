@@ -2,8 +2,8 @@ name: G83 Yahoo Radar 24x7 Monitor
 
 on:
   schedule:
-    # Run every 15 minutes (UTC)
-    - cron: "*/15 * * * *"
+    # Run every 10 minutes (UTC)
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       test_notify:

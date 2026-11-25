@@ -132,13 +132,17 @@
     $("kpiFxSub").textContent = `基准 ${snapshot.fx_base || "-"} + ${cm.fx_spread_pct ?? 3.5}%汇损 · EMS ${cm.intl_shipping_jpy ?? 4500}円`;
     $("kpiBudgetDesc").textContent = `13代≤¥${gr["13"]?.max_effective_512_cny ?? 2000} · 12代≤¥${gr["12"]?.max_effective_512_cny ?? 1450} · 11代≤¥${gr["11"]?.max_effective_512_cny ?? 1000}`;
 
-    // Status line
+    // Status line with live relative freshness
     let nextStr = "";
+    const ageMin = snapshot.scanned_ts ? Math.max(0, Math.floor((Date.now() / 1000 - snapshot.scanned_ts) / 60)) : null;
+    const ageTxt = ageMin === null ? "" : (ageMin === 0 ? "（刚刚更新）" : `（${ageMin}分钟前）`);
     if (isLocalServer && serverMeta.next_scan_ts) {
       const leftMin = Math.max(0, Math.ceil((serverMeta.next_scan_ts - Date.now() / 1000) / 60));
       nextStr = serverMeta.scanning ? " · 正在后台扫描中..." : ` · 约 ${leftMin} 分钟后自动刷新`;
+    } else if (!isLocalServer) {
+      nextStr = " · GitHub云端每10~15分钟自动更新";
     }
-    $("statusSub").textContent = `上次更新: ${snapshot.scanned_at} (耗时 ${snapshot.duration_sec}s)${nextStr}`;
+    $("statusSub").textContent = `上次扫描: ${snapshot.scanned_at}${ageTxt}${nextStr}`;
 
     // Tab counts
     const ram16Filter = (arr) => arr.filter((x) => x.ram_gb && x.ram_gb >= 16);
@@ -398,33 +402,48 @@
     });
   }, 1000);
 
-  async function loadData() {
-    try {
-      const res = await fetch("/api/snapshot", { cache: "no-store" });
-      if (res.ok) {
-        const data = await res.json();
-        isLocalServer = true;
-        serverMeta = data.meta || {};
-        snapshot = data.snapshot;
-        $("modeBadge").textContent = "🟢 本地实时服务模式";
-        $("modeBadge").classList.add("live");
-        $("btnScan").disabled = !!serverMeta.scanning;
-        $("btnScan").textContent = serverMeta.scanning ? "⏳ 扫描中..." : "🔄 立即扫描";
-        render();
-        return;
-      }
-    } catch (_) {}
+  async function loadData(showFeedback = false) {
+    const isLikelyLocal = ["127.0.0.1", "localhost"].includes(window.location.hostname) || window.location.port === "8783";
+    if (isLikelyLocal) {
+      try {
+        const res = await fetch("/api/snapshot", { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          isLocalServer = true;
+          serverMeta = data.meta || {};
+          snapshot = data.snapshot;
+          $("modeBadge").textContent = "🟢 本地实时服务模式";
+          $("modeBadge").classList.add("live");
+          $("btnScan").style.display = "";
+          $("btnScan").disabled = !!serverMeta.scanning;
+          $("btnScan").textContent = serverMeta.scanning ? "⏳ 扫描中..." : "🔄 立即扫描";
+          render();
+          return;
+        }
+      } catch (_) {}
+    }
 
-    // Fallback: Static GitHub Pages mode
+    // Static GitHub Pages mode (fast direct load + cache-busting)
     try {
       const res = await fetch("./data.json?t=" + Date.now(), { cache: "no-store" });
       if (res.ok) {
+        const prevTs = snapshot?.scanned_ts || 0;
         isLocalServer = false;
         snapshot = await res.json();
-        $("modeBadge").textContent = "☁️ 云端静态榜单 (GitHub Actions 自动更新)";
-        $("btnScan").style.display = "none";
+        $("modeBadge").textContent = "☁️ 云端自动盯盘 (每10~15分钟更新)";
+        $("modeBadge").classList.add("live");
+        $("btnScan").style.display = "";
+        $("btnScan").disabled = false;
+        $("btnScan").textContent = "🔄 拉取最新云端数据";
         $("btnSettings").style.display = "none";
         render();
+        if (showFeedback) {
+          if (snapshot.scanned_ts && snapshot.scanned_ts > prevTs && prevTs > 0) {
+            showToast(`✅ 已更新到最新云端快照 (${snapshot.scanned_at})`);
+          } else {
+            showToast(`已是最新云端快照 (${snapshot.scanned_at}，云端每10~15分钟自动扫一次)`);
+          }
+        }
         return;
       }
     } catch (_) {}
@@ -433,7 +452,12 @@
   }
 
   async function triggerManualScan() {
-    if (!isLocalServer) return;
+    if (!isLocalServer) {
+      $("btnScan").disabled = true;
+      $("btnScan").textContent = "⏳ 拉取中...";
+      await loadData(true);
+      return;
+    }
     $("btnScan").disabled = true;
     $("btnScan").textContent = "⏳ 扫描雅虎中...";
     showToast("正在抓取雅虎日拍最新 G83 列表，约需 5~10 秒...");
@@ -653,9 +677,14 @@
     }
   });
 
-  // Auto refresh UI every 45s in local mode
+  // Auto refresh UI periodically (45s local, 90s cloud Pages) AND when mobile tab wakes up
   loadData();
   setInterval(() => {
-    if (isLocalServer) loadData();
-  }, 45000);
+    loadData(false);
+  }, 60000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      loadData(false);
+    }
+  });
 })();
