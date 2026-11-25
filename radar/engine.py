@@ -160,8 +160,10 @@ def run_scan(
         fresh = filter_new_alerts(hot_alerts, cooldown_minutes=cooldown)
         alert_dispatch["triggered"] = len(fresh)
         if fresh:
-            title, md_body, plain_body, top_link = format_deal_alert(fresh)
-            alert_dispatch["channels"] = send_notification(cfg, title, md_body, plain_body, link_url=top_link)
+            title, md_body, plain_body, top_link, compact_body = format_deal_alert(fresh)
+            alert_dispatch["channels"] = send_notification(
+                cfg, title, md_body, plain_body, link_url=top_link, compact_body=compact_body
+            )
 
     now_cst = now_utc.astimezone(dt.timezone(dt.timedelta(hours=8)))
     snapshot = {

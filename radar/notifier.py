@@ -70,13 +70,15 @@ def send_notification(
     markdown_body: str,
     plain_body: str,
     link_url: str = "",
+    compact_body: str = "",
 ) -> dict[str, dict[str, Any]]:
     """Send notifications to all configured channels. Returns status per channel."""
     notif = cfg.get("notifications", {})
     results: dict[str, dict[str, Any]] = {}
+    mobile_body = (compact_body or plain_body)[:900]
 
     if notif.get("windows_toast"):
-        ok, info = _send_windows_toast(title, plain_body)
+        ok, info = _send_windows_toast(title, mobile_body)
         results["windows_toast"] = {"ok": ok, "info": info}
 
     pushplus_token = (notif.get("pushplus_token") or "").strip()
@@ -118,7 +120,7 @@ def send_notification(
 
             payload: dict[str, Any] = {
                 "title": title,
-                "body": plain_body[:700],
+                "body": mobile_body,
                 "group": "G83捡漏雷达",
                 "sound": "bell",
                 "level": "timeSensitive",
@@ -173,7 +175,7 @@ def send_notification(
             payload_ntfy: dict[str, Any] = {
                 "topic": topic_name,
                 "title": title,
-                "message": plain_body[:1200],
+                "message": mobile_body,
                 "priority": 4,
                 "tags": ["laptop", "moneybag"],
             }
@@ -204,64 +206,86 @@ def send_notification(
     return results
 
 
-def format_deal_alert(items: list[dict[str, Any]]) -> tuple[str, str, str, str]:
-    """Format a batch of hot deals into (title, markdown_body, plain_body, top_link)."""
+def _build_detail_note(it: dict[str, Any]) -> str:
+    if not it.get("detail_inspected"):
+        return "🔎待深查正文"
+    mods = it.get("detail_moderate_tags") or []
+    mins = it.get("detail_minor_tags") or []
+    pos = it.get("detail_positives") or []
+    parts = []
+    if mods:
+        parts.append("⚠️" + "/".join(mods))
+    else:
+        parts.append("✅正文无硬伤")
+    if mins:
+        parts.append("ℹ️" + "/".join(mins))
+    if pos:
+        parts.append("✨" + "/".join(pos[:2]))
+    return " · ".join(parts)
+
+
+def format_deal_alert(items: list[dict[str, Any]], is_digest: bool = False) -> tuple[str, str, str, str, str]:
+    """Format hot deals (or live Top-3 digest) into (title, markdown_body, plain_body, top_link, compact_body)."""
     top = items[0]
-    if len(items) == 1:
+    if is_digest:
+        title = (
+            f"📊 G83实时榜单预览(Top{min(3, len(items))}) "
+            f"榜首 {top['gen_label_short']} 折合¥{int(top['effective_512_cny'])}"
+        )
+    elif len(items) == 1:
         title = (
             f"🔥 G83捡漏! {top['gen_label_short']} "
-            f"等效¥{int(top['effective_512_cny'])} ({top['remaining_text']})"
+            f"折合¥{int(top['effective_512_cny'])} ({top['remaining_text']})"
         )
     else:
         title = (
             f"🔥 发现 {len(items)} 台 G83 好价! "
-            f"最低 {top['gen_label_short']} 等效¥{int(top['effective_512_cny'])}"
+            f"最低 {top['gen_label_short']} 折合¥{int(top['effective_512_cny'])}"
         )
 
     md_lines: list[str] = []
     plain_lines: list[str] = []
+    compact_lines: list[str] = []
 
-    for idx, it in enumerate(items[:6], 1):
+    limit = 3 if is_digest else 5
+    for idx, it in enumerate(items[:limit], 1):
         seller_tag = "个人免税" if not it["is_store"] else "商家含税"
-        deal_type = "💎一口价" if it.get("alert_reason") == "buy_now" else "⏰快结拍"
-        price_jpy = it["buy_now_price_jpy"] if it.get("alert_reason") == "buy_now" else it["price_jpy"]
-        untaxed = int(it["buy_now_untaxed_cny"] if it.get("alert_reason") == "buy_now" else it["untaxed_cny"])
-        eff_512 = int(it["buy_now_effective_512_cny"] if it.get("alert_reason") == "buy_now" else it["effective_512_cny"])
-        with_tax = int(it["buy_now_with_customs_cny"] if it.get("alert_reason") == "buy_now" else it["with_customs_cny"])
+        is_bn = it.get("alert_reason") == "buy_now"
+        deal_type = "💎一口价" if is_bn else ("👀实时榜" if is_digest else "⏰快结拍")
+        price_jpy = it["buy_now_price_jpy"] if is_bn else it["price_jpy"]
+        untaxed = int(it["buy_now_untaxed_cny"] if is_bn else it["untaxed_cny"])
+        eff_512 = int(it["buy_now_effective_512_cny"] if is_bn else it["effective_512_cny"])
+        with_tax = int(it["buy_now_with_customs_cny"] if is_bn else it["with_customs_cny"])
         save_cny = int(it["savings_vs_ref_cny"])
+        save_txt = f"省¥{save_cny}" if save_cny >= 0 else f"超参考¥{abs(save_cny)}"
 
-        specs = f"{it['gen_label_short']} | {it['cpu_model']} | {it['ram_label']} | {it['ssd_label']} | {it['condition_label']}"
-        detail_note = ""
-        if it.get("detail_inspected"):
-            mods = it.get("detail_moderate_tags") or []
-            mins = it.get("detail_minor_tags") or []
-            pos = it.get("detail_positives") or []
-            parts = []
-            if mods:
-                parts.append("⚠️瑕疵:" + "/".join(mods))
-            else:
-                parts.append("✅正文无硬伤")
-            if mins:
-                parts.append("提示:" + "/".join(mins))
-            if pos:
-                parts.append("/".join(pos))
-            detail_note = " | ".join(parts)
+        specs = f"{it['gen_label_short']} | {it['cpu_model']} | {it['ram_label']}/{it['ssd_label']} | {it['condition_label']}"
+        detail_note = _build_detail_note(it)
 
         md_lines.append(
             f"#### {idx}. [{deal_type}] {it['title'][:65]}\n"
             f"- **配置**: {specs}\n"
-            f"- **正文排雷**: {detail_note or '未深查'}\n"
+            f"- **正文排雷**: {detail_note}\n"
             f"- **日拍价**: `{price_jpy:,} 日元` ({seller_tag}, 出价 {it['bid_count']} 次, 收藏 {it['watch_count']})\n"
-            f"- **预计到手**: 未税 **¥{untaxed}** | 折合512G **¥{eff_512}** | 被税封顶 ¥{with_tax} (省 ¥{save_cny})\n"
+            f"- **预计到手**: 未税 **¥{untaxed}** | 折合512G **¥{eff_512}** | 被税封顶 ¥{with_tax} ({save_txt})\n"
             f"- **剩余时间**: {it['remaining_text']} | 评分: {it['steal_score']}/100\n"
             f"- **直达**: [在任意门查看]({it['doorzo_url']}) | [雅虎原页]({it['yahoo_url']})\n"
         )
         plain_lines.append(
             f"{idx}. [{deal_type}] {specs}\n"
-            f"   排雷: {detail_note or '未深查'}\n"
-            f"   日拍 {price_jpy:,}円({seller_tag}, {it['bid_count']}出价) -> 未税¥{untaxed} / 折合512G ¥{eff_512} (省¥{save_cny})\n"
-            f"   剩余 {it['remaining_text']} | 任意门: {it['doorzo_url']}\n"
-            f"   雅虎: {it['yahoo_url']}"
+            f"   排雷: {detail_note}\n"
+            f"   日拍 {price_jpy:,}円({seller_tag}, {it['bid_count']}出价) -> 未税¥{untaxed} / 折合512G ¥{eff_512} ({save_txt})\n"
+            f"   剩余 {it['remaining_text']} | 雅虎: {it['yahoo_url']}"
+        )
+        compact_lines.append(
+            f"{idx}. [{deal_type}] {specs}\n"
+            f"   {price_jpy:,}円({seller_tag}·{it['bid_count']}出价) → 未税¥{untaxed} | 折合512G ¥{eff_512}({save_txt}) | 被税¥{with_tax}\n"
+            f"   {detail_note} | 剩{it['remaining_text']} | {it['steal_score']}分"
         )
 
-    return title, "\n".join(md_lines), "\n".join(plain_lines), top["doorzo_url"]
+    if is_digest:
+        compact_lines.append("👆 这是真实格式预览（点此直达榜首任意门页；平时仅达标捡漏才推送）")
+    else:
+        compact_lines.append("👆 点此通知直达任意门商品页查看出价")
+
+    return title, "\n".join(md_lines), "\n".join(plain_lines), top["doorzo_url"], "\n".join(compact_lines)

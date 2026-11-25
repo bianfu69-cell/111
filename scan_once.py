@@ -7,7 +7,7 @@ import sys
 
 from radar.config import load_config
 from radar.engine import run_scan
-from radar.notifier import send_notification
+from radar.notifier import format_deal_alert, send_notification
 
 
 def main() -> int:
@@ -21,6 +21,7 @@ def main() -> int:
     parser.add_argument("--no-alert", action="store_true", help="Do not dispatch push notifications")
     parser.add_argument("--export-static", action="store_true", help="Export docs/ static site for GitHub Pages")
     parser.add_argument("--test-notify", action="store_true", help="Send a test notification and exit")
+    parser.add_argument("--send-digest", action="store_true", help="Force-send Top 3 live listings preview push")
     parser.add_argument("--top", type=int, default=12, help="How many top listings to print in terminal")
     args = parser.parse_args()
 
@@ -60,6 +61,10 @@ def main() -> int:
         if not x["is_junk"] and not x.get("has_severe_defect") and not x["ignored"]
         and x["cpu_tier"] != "i3" and x["generation"] in (14, 13, 12, 11) and (x["ram_gb"] or 0) >= 16
     ]
+    if args.send_digest and clean_16:
+        title, md_body, plain_body, top_link, compact_body = format_deal_alert(clean_16[:3], is_digest=True)
+        digest_res = send_notification(cfg, title, md_body, plain_body, link_url=top_link, compact_body=compact_body)
+        print("真实榜单预览推送结果:", digest_res)
     print(f"\n--- Top {min(args.top, len(clean_16))} 综合捡漏榜 (16GB+, 已剔除详情硬伤) ---")
     for idx, it in enumerate(clean_16[: args.top], 1):
         flag = "🔥达标" if (it["under_budget"] or it["buy_now_under_budget"]) else "观察"

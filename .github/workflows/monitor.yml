@@ -7,7 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       test_notify:
-        description: "勾选后立即发送一条测试推送到微信/手机（验证通道是否连通）"
+        description: "勾选后发送简短测试消息（验证通道）"
+        required: false
+        default: false
+        type: boolean
+      send_digest:
+        description: "勾选后立即推送当前真实 Top3 排雷榜单预览到手机（查看正式推送样式）"
         required: false
         default: false
         type: boolean
@@ -62,7 +67,12 @@ jobs:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python scan_once.py --export-static
+        run: |
+          if [ "${{ inputs.send_digest }}" = "true" ]; then
+            python scan_once.py --export-static --send-digest
+          else
+            python scan_once.py --export-static
+          fi
 
       - name: Commit updated GitHub Pages ranking & alert state
         run: |
