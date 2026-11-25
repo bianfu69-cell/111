@@ -423,30 +423,47 @@
       } catch (_) {}
     }
 
-    // Static GitHub Pages mode (fast direct load + cache-busting)
-    try {
-      const res = await fetch("./data.json?t=" + Date.now(), { cache: "no-store" });
-      if (res.ok) {
-        const prevTs = snapshot?.scanned_ts || 0;
-        isLocalServer = false;
-        snapshot = await res.json();
-        $("modeBadge").textContent = "☁️ 云端自动盯盘 (每10~15分钟更新)";
-        $("modeBadge").classList.add("live");
-        $("btnScan").style.display = "";
-        $("btnScan").disabled = false;
-        $("btnScan").textContent = "🔄 拉取最新云端数据";
-        $("btnSettings").style.display = "none";
-        render();
-        if (showFeedback) {
-          if (snapshot.scanned_ts && snapshot.scanned_ts > prevTs && prevTs > 0) {
-            showToast(`✅ 已更新到最新云端快照 (${snapshot.scanned_at})`);
-          } else {
-            showToast(`已是最新云端快照 (${snapshot.scanned_at}，云端每10~15分钟自动扫一次)`);
+    // Static GitHub Pages mode: fetch both Pages data.json and raw.githubusercontent.com to bypass CDN lag
+    const urls = ["./data.json?t=" + Date.now()];
+    const hostMatch = window.location.hostname.match(/^([^.]+)\.github\.io$/i);
+    const repoSeg = window.location.pathname.split("/").filter(Boolean)[0];
+    if (hostMatch && repoSeg) {
+      urls.push(`https://raw.githubusercontent.com/${hostMatch[1]}/${repoSeg}/main/docs/data.json?t=${Date.now()}`);
+    }
+
+    let bestSnap = null;
+    for (const u of urls) {
+      try {
+        const res = await fetch(u, { cache: "no-store" });
+        if (res.ok) {
+          const cand = await res.json();
+          if (!bestSnap || (cand.scanned_ts || 0) > (bestSnap.scanned_ts || 0)) {
+            bestSnap = cand;
           }
         }
-        return;
+      } catch (_) {}
+    }
+
+    if (bestSnap) {
+      const prevTs = snapshot?.scanned_ts || 0;
+      isLocalServer = false;
+      snapshot = bestSnap;
+      $("modeBadge").textContent = "☁️ 云端自动盯盘 (约15分钟更新)";
+      $("modeBadge").classList.add("live");
+      $("btnScan").style.display = "";
+      $("btnScan").disabled = false;
+      $("btnScan").textContent = "🔄 拉取最新云端数据";
+      $("btnSettings").style.display = "none";
+      render();
+      if (showFeedback) {
+        if (snapshot.scanned_ts && snapshot.scanned_ts > prevTs && prevTs > 0) {
+          showToast(`✅ 已更新到最新云端快照 (${snapshot.scanned_at})`);
+        } else {
+          showToast(`当前最新云端快照为 ${snapshot.scanned_at}（云端每15分钟自动扫一次）`);
+        }
       }
-    } catch (_) {}
+      return;
+    }
 
     $("itemList").innerHTML = `<div class="empty-state">无法加载数据，请确认已启动本地服务或已生成 data.json。</div>`;
   }

@@ -2,8 +2,8 @@ name: G83 Yahoo Radar 24x7 Monitor
 
 on:
   schedule:
-    # Run every 10 minutes (UTC)
-    - cron: "*/10 * * * *"
+    # Off-peak minutes (:03, :18, :33, :48) to avoid GitHub's :00/:15/:30 congestion
+    - cron: "3,18,33,48 * * * *"
   workflow_dispatch:
     inputs:
       test_notify:
