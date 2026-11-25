@@ -71,6 +71,7 @@ def send_notification(
     plain_body: str,
     link_url: str = "",
     compact_body: str = "",
+    group_name: str = "日淘捡漏雷达",
 ) -> dict[str, dict[str, Any]]:
     """Send notifications to all configured channels. Returns status per channel."""
     notif = cfg.get("notifications", {})
@@ -121,7 +122,7 @@ def send_notification(
             payload: dict[str, Any] = {
                 "title": title,
                 "body": mobile_body,
-                "group": "G83捡漏雷达",
+                "group": group_name,
                 "sound": "bell",
                 "level": "timeSensitive",
             }
@@ -225,22 +226,23 @@ def _build_detail_note(it: dict[str, Any]) -> str:
 
 
 def format_deal_alert(items: list[dict[str, Any]], is_digest: bool = False) -> tuple[str, str, str, str, str]:
-    """Format hot deals (or live Top-3 digest) into (title, markdown_body, plain_body, top_link, compact_body)."""
+    """Format hot deals (or live Top-3 digest) across any category into multi-channel texts."""
     top = items[0]
+    top_tag = top.get("profile_name") or top.get("gen_label_short") or "日淘好物"
     if is_digest:
         title = (
-            f"📊 G83实时榜单预览(Top{min(3, len(items))}) "
-            f"榜首 {top['gen_label_short']} 折合¥{int(top['effective_512_cny'])}"
+            f"📊 日淘雷达实时榜(Top{min(3, len(items))}) "
+            f"[{top_tag}] 到手¥{int(top['effective_512_cny'])}"
         )
     elif len(items) == 1:
         title = (
-            f"🔥 G83捡漏! {top['gen_label_short']} "
-            f"折合¥{int(top['effective_512_cny'])} ({top['remaining_text']})"
+            f"🔥 [{top_tag}] 捡漏! "
+            f"到手¥{int(top['effective_512_cny'])} ({top['remaining_text']})"
         )
     else:
         title = (
-            f"🔥 发现 {len(items)} 台 G83 好价! "
-            f"最低 {top['gen_label_short']} 折合¥{int(top['effective_512_cny'])}"
+            f"🔥 发现 {len(items)} 件日淘好价! "
+            f"[{top_tag}] 到手¥{int(top['effective_512_cny'])}"
         )
 
     md_lines: list[str] = []
@@ -254,37 +256,55 @@ def format_deal_alert(items: list[dict[str, Any]], is_digest: bool = False) -> t
         deal_type = "💎一口价" if is_bn else ("👀实时榜" if is_digest else "⏰快结拍")
         price_jpy = it["buy_now_price_jpy"] if is_bn else it["price_jpy"]
         untaxed = int(it["buy_now_untaxed_cny"] if is_bn else it["untaxed_cny"])
-        eff_512 = int(it["buy_now_effective_512_cny"] if is_bn else it["effective_512_cny"])
+        eff_cny = int(it["buy_now_effective_512_cny"] if is_bn else it["effective_512_cny"])
         with_tax = int(it["buy_now_with_customs_cny"] if is_bn else it["with_customs_cny"])
         save_cny = int(it["savings_vs_ref_cny"])
         save_txt = f"省¥{save_cny}" if save_cny >= 0 else f"超参考¥{abs(save_cny)}"
 
-        specs = f"{it['gen_label_short']} | {it['cpu_model']} | {it['ram_label']}/{it['ssd_label']} | {it['condition_label']}"
+        spec_parts = [f"{it.get('profile_icon', '📦')}{it.get('profile_name', '')}"]
+        if it.get("category") == "laptop":
+            spec_parts.append(it.get("gen_label_short", ""))
+            if it.get("cpu_model"):
+                spec_parts.append(it["cpu_model"])
+            if it.get("ram_label") or it.get("ssd_label"):
+                spec_parts.append(f"{it.get('ram_label', '')}/{it.get('ssd_label', '')}".strip("/"))
+        else:
+            if it.get("cpu_model"):
+                spec_parts.append(it["cpu_model"])
+            spec_parts.append(it.get("title", "")[:26])
+        spec_parts.append(it.get("condition_label", "二手"))
+        specs = " | ".join(p for p in spec_parts if p)
         detail_note = _build_detail_note(it)
+        tax_str = "包税专线" if it.get("tax_included_shipping") else f"若被税¥{with_tax}"
+        cost_str = (
+            f"未税¥{untaxed} | 折合512G ¥{eff_cny}({save_txt}) | {tax_str}"
+            if it.get("ssd_adj_cny", 0) > 0
+            else f"预计到手¥{eff_cny}({save_txt}) | {tax_str}"
+        )
 
         md_lines.append(
             f"#### {idx}. [{deal_type}] {it['title'][:65]}\n"
-            f"- **配置**: {specs}\n"
+            f"- **商品**: {specs}\n"
             f"- **正文排雷**: {detail_note}\n"
             f"- **日拍价**: `{price_jpy:,} 日元` ({seller_tag}, 出价 {it['bid_count']} 次, 收藏 {it['watch_count']})\n"
-            f"- **预计到手**: 未税 **¥{untaxed}** | 折合512G **¥{eff_512}** | 被税封顶 ¥{with_tax} ({save_txt})\n"
+            f"- **预计成本**: {cost_str}\n"
             f"- **剩余时间**: {it['remaining_text']} | 评分: {it['steal_score']}/100\n"
             f"- **直达**: [在任意门查看]({it['doorzo_url']}) | [雅虎原页]({it['yahoo_url']})\n"
         )
         plain_lines.append(
             f"{idx}. [{deal_type}] {specs}\n"
             f"   排雷: {detail_note}\n"
-            f"   日拍 {price_jpy:,}円({seller_tag}, {it['bid_count']}出价) -> 未税¥{untaxed} / 折合512G ¥{eff_512} ({save_txt})\n"
+            f"   日拍 {price_jpy:,}円({seller_tag}, {it['bid_count']}出价) -> {cost_str}\n"
             f"   剩余 {it['remaining_text']} | 雅虎: {it['yahoo_url']}"
         )
         compact_lines.append(
             f"{idx}. [{deal_type}] {specs}\n"
-            f"   {price_jpy:,}円({seller_tag}·{it['bid_count']}出价) → 未税¥{untaxed} | 折合512G ¥{eff_512}({save_txt}) | 被税¥{with_tax}\n"
+            f"   {price_jpy:,}円({seller_tag}·{it['bid_count']}出价) → {cost_str}\n"
             f"   {detail_note} | 剩{it['remaining_text']} | {it['steal_score']}分"
         )
 
     if is_digest:
-        compact_lines.append("👆 这是真实格式预览（点此直达榜首任意门页；平时仅达标捡漏才推送）")
+        compact_lines.append("👆 实时榜单预览（点此直达榜首任意门页；平时仅达标捡漏才推送）")
     else:
         compact_lines.append("👆 点此通知直达任意门商品页查看出价")
 

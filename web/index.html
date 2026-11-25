@@ -6,7 +6,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <title>Dynabook G83 雅虎日拍捡漏雷达</title>
+  <title>日淘任意门 · 万能多品类捡漏雷达</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -15,27 +15,34 @@
       <div class="brand">
         <div class="brand-icon">📡</div>
         <div>
-          <h1>Dynabook G83 雅虎日拍捡漏雷达</h1>
+          <h1>日淘任意门 · 多品类捡漏雷达</h1>
           <div class="brand-sub" id="statusSub">正在加载最新数据...</div>
         </div>
       </div>
       <div class="header-actions">
         <span class="mode-badge" id="modeBadge">检测运行模式...</span>
+        <button class="btn btn-green" id="btnManageProfiles" title="随时添加、修改、暂停或删除你想买的商品">➕ 添加/管理商品</button>
         <button class="btn btn-primary" id="btnScan" title="立即重新抓取雅虎日拍">🔄 立即扫描</button>
-        <button class="btn" id="btnSettings" title="修改预算、汇率、运费与手机推送">⚙️ 预算与推送设置</button>
+        <button class="btn" id="btnSyncGh" style="display:none;" title="将本地修改的商品列表同步到 GitHub 云端">☁️ 同步云端</button>
+        <button class="btn" id="btnSettings" title="修改全局汇率、代拍费与手机推送通道">⚙️ 全局与推送</button>
       </div>
     </header>
 
+    <!-- Multi-Category Product Switcher -->
+    <section class="profile-strip" id="profileBar">
+      <button class="profile-pill active" data-pid="all">🌐 全部商品总榜</button>
+    </section>
+
     <section class="kpi-grid">
       <div class="kpi-card">
-        <div class="kpi-label">当前在拍有效整机</div>
+        <div class="kpi-label">当前视角有效商品</div>
         <div class="kpi-val" id="kpiClean">-</div>
-        <div class="kpi-sub" id="kpiRaw">已自动过滤配件与故障机</div>
+        <div class="kpi-sub" id="kpiRaw">已自动排雷过滤配件与硬伤</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">🎯 达标捡漏 (≤目标预算)</div>
         <div class="kpi-val green" id="kpiUnderBudget">-</div>
-        <div class="kpi-sub" id="kpiBudgetDesc">13代≤¥2000 · 12代≤¥1450 · 11代≤¥1000</div>
+        <div class="kpi-sub" id="kpiBudgetDesc">按各商品目标到手价实时比价</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">⚡ 3小时内即将结拍</div>
@@ -43,43 +50,42 @@
         <div class="kpi-sub">临近结拍优先盯防</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">13代 / 12代 / 11代</div>
-        <div class="kpi-val cyan" id="kpiGenSplit">-</div>
-        <div class="kpi-sub">覆盖 LY / LW / KW / KV / HU / HS</div>
+        <div class="kpi-label" id="kpi4Label">监控商品 / 最低到手价</div>
+        <div class="kpi-val cyan" id="kpi4Val">-</div>
+        <div class="kpi-sub" id="kpi4Sub">支持 8 套品类专属排雷库</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">任意门结算估算汇率</div>
         <div class="kpi-val" id="kpiFx">-</div>
-        <div class="kpi-sub" id="kpiFxSub">含约 3.5% 汇损 + EMS运费</div>
+        <div class="kpi-sub" id="kpiFxSub">含约 3.5% 汇损 + 对应国际运费</div>
       </div>
     </section>
 
     <nav class="tabs" id="presetTabs">
       <button class="tab-btn active" data-tab="steals">🔥 综合捡漏榜 <span class="tab-count" id="cntSteals">0</span></button>
-      <button class="tab-btn" data-tab="gen13">🎯 13代主力 <span class="tab-count" id="cntGen13">0</span></button>
+      <button class="tab-btn" data-tab="under">🎯 达标好价 <span class="tab-count" id="cntUnder">0</span></button>
       <button class="tab-btn" data-tab="ending">⚡ 3小时内结拍 <span class="tab-count" id="cntEnding">0</span></button>
       <button class="tab-btn" data-tab="buynow">💎 低价一口价 <span class="tab-count" id="cntBuyNow">0</span></button>
-      <button class="tab-btn" data-tab="value1112">💰 12/11代白菜 <span class="tab-count" id="cntValue">0</span></button>
       <button class="tab-btn" data-tab="starred">⭐ 我的盯盘 <span class="tab-count" id="cntStarred">0</span></button>
-      <button class="tab-btn" data-tab="all">🗂️ 全部(含8G/硬伤/瑕疵) <span class="tab-count" id="cntAll">0</span></button>
+      <button class="tab-btn" data-tab="all">🗂️ 全部(含硬伤/瑕疵) <span class="tab-count" id="cntAll">0</span></button>
     </nav>
 
     <section class="filter-bar">
-      <input type="text" id="filterSearch" placeholder="搜型号/CPU/关键词，如 1340P, LY, 美品..." />
-      <select id="filterGen">
+      <input type="text" id="filterSearch" placeholder="搜标题/型号/关键词，如 1340P, GR3, 美品..." />
+      <select id="filterGen" class="laptop-only-ctl">
         <option value="all">全部代数</option>
         <option value="13plus">仅 13代 / Ultra</option>
         <option value="12">仅 12代</option>
         <option value="11">仅 11代</option>
       </select>
-      <select id="filterRam">
+      <select id="filterRam" class="laptop-only-ctl">
         <option value="16plus">仅 16GB 及以上</option>
         <option value="all">全部内存 (含8GB/未标)</option>
       </select>
-      <select id="filterSsd">
+      <select id="filterSsd" class="laptop-only-ctl">
         <option value="all">全部硬盘</option>
         <option value="512plus">仅 512GB+</option>
-        <option value="256">仅 256GB (折算+¥180)</option>
+        <option value="256">仅 256GB</option>
       </select>
       <select id="filterSeller">
         <option value="all">个人 + 商家</option>
@@ -88,10 +94,9 @@
       </select>
       <select id="sortBy">
         <option value="score">排序：捡漏评分 高→低</option>
-        <option value="eff512">排序：折合512G到手价 低→高</option>
-        <option value="untaxed">排序：未税到手价 低→高</option>
+        <option value="eff512">排序：预计到手价 低→高</option>
         <option value="ending">排序：剩余时间 短→长</option>
-        <option value="savings">排序：比闲鱼省最多</option>
+        <option value="savings">排序：比国内参考价省最多</option>
       </select>
       <label class="check-pill"><input type="checkbox" id="chkUnderBudget" /> 只看≤预算</label>
       <label class="check-pill"><input type="checkbox" id="chkHideDefect" /> 隐藏轻微瑕疵</label>
@@ -99,8 +104,8 @@
     </section>
 
     <div class="list-meta">
-      <span id="resultCount">显示 0 台机器</span>
-      <span>💡 提示：雅虎价已含商家10%消费税；点击「复制链接」可直接粘贴到日淘任意门 App 搜索框直达</span>
+      <span id="resultCount">显示 0 件商品</span>
+      <span>💡 提示：雅虎价已含商家10%税；点「复制链接」可粘贴到日淘任意门 App 搜索框直达</span>
     </div>
 
     <main class="item-list" id="itemList">
@@ -108,67 +113,167 @@
     </main>
   </div>
 
-  <!-- Settings Modal -->
+  <!-- Self-Service Product Profiles Manager Modal (Works on BOTH PC & Mobile GitHub Pages!) -->
+  <div class="modal-backdrop" id="profilesModal">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h2>📦 添加 / 管理我的监控商品（自助多品类）</h2>
+        <button class="btn btn-sm" id="btnClosePm">关闭 ✕</button>
+      </div>
+
+      <div class="pm-layout">
+        <div class="pm-sidebar">
+          <button class="btn btn-green" id="btnNewProfile" style="width:100%;">＋ 添加一个新商品</button>
+          <div id="pmList" style="display:flex;flex-direction:column;gap:7px;"></div>
+        </div>
+
+        <div id="pmEditor">
+          <div class="form-section" style="margin-bottom:12px;">
+            <h3 id="pmFormTitle">编辑监控商品</h3>
+            <div class="form-grid">
+              <div class="field">
+                <label>商品名称（显示在标签栏和推送标题里）</label>
+                <input type="text" id="pmName" placeholder="如：理光 GR3 / Switch OLED / ThinkPad X1" />
+              </div>
+              <div class="field">
+                <label>品类模板（自动套用运费、税率与专属日文排雷库）</label>
+                <select id="pmCategory" style="width:100%;background:var(--bg);border:1px solid var(--border-light);color:var(--text);border-radius:7px;padding:7px 9px;font-size:12.5px;"></select>
+              </div>
+              <div class="field">
+                <label>目标到手价上限 (¥ 低于此价才算达标捡漏)</label>
+                <input type="number" id="pmTargetCny" placeholder="如 2000" />
+              </div>
+              <div class="field">
+                <label>国内/闲鱼参考价 (¥ 用来算能省多少钱)</label>
+                <input type="number" id="pmRefCny" placeholder="如 2400" />
+              </div>
+            </div>
+            <div class="tpl-hint-box" id="pmTplHint">选择品类模板后会显示对应物流建议与自动排雷范围。</div>
+
+            <div class="field" style="margin-top:10px;">
+              <label>雅虎搜索关键词（每行一个，建议填英文/日文型号，如 RICOH GR III、リコー GR3）</label>
+              <textarea id="pmQueries" placeholder="每行一个关键词，例如：&#10;RICOH GR III&#10;リコー GR3"></textarea>
+            </div>
+
+            <div class="form-grid" style="margin-top:10px;">
+              <div class="field">
+                <label>国际运费+加固估算 (日元)</label>
+                <input type="number" id="pmIntlShip" />
+              </div>
+              <div class="field">
+                <label>默认日内运费 (日元，无标注时)</label>
+                <input type="number" id="pmDomShip" />
+              </div>
+              <div class="field">
+                <label>必须包含词（选填，逗号分隔，如 gr3,grii）</label>
+                <input type="text" id="pmMustInclude" placeholder="留空则不限制" />
+              </div>
+              <div class="field">
+                <label>额外排除词（选填，逗号分隔，如 ストラップ,空箱）</label>
+                <input type="text" id="pmExclude" placeholder="已内置常见配件排除，可额外补充" />
+              </div>
+            </div>
+
+            <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;">
+              <label class="check-pill"><input type="checkbox" id="pmEnabled" /> 启用监控</label>
+              <label class="check-pill"><input type="checkbox" id="pmTaxIncl" /> 走竹蜻蜓等包税专线 (0关税)</label>
+              <label class="check-pill"><input type="checkbox" id="pmAlertEnabled" /> 达标时发送手机推送</label>
+              <label class="check-pill"><input type="checkbox" id="pmBuyNowAlert" /> 低价一口价立刻推送</label>
+            </div>
+
+            <!-- Laptop-specific extra rules (shown only when category == laptop) -->
+            <div id="pmLaptopBox" style="display:none;margin-top:12px;padding-top:10px;border-top:1px dashed var(--border-light);">
+              <div style="font-size:12px;color:var(--cyan);font-weight:600;margin-bottom:8px;">💻 笔记本专属筛选与换盘设置</div>
+              <div class="form-grid">
+                <div class="field"><label>256G→512G 换盘差价 (¥，0为不折算)</label><input type="number" id="pmSsdDiff" /></div>
+                <div class="field"><label>雅虎分类ID (笔记本默认 23412)</label><input type="text" id="pmAucCat" /></div>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;">
+                <label class="check-pill"><input type="checkbox" id="pmReq16" /> 推送要求 16GB+ 内存</label>
+                <label class="check-pill"><input type="checkbox" id="pmExclI3" /> 自动排除 i3 处理器</label>
+              </div>
+              <div id="pmG83GenBox" style="display:none;margin-top:10px;">
+                <div style="font-size:11.5px;color:var(--text-muted);margin-bottom:6px;">东芝 G83 分代目标预算（折合 512G 未税人民币）：</div>
+                <div class="form-grid">
+                  <div class="field"><label>13代 目标上限 (¥)</label><input type="number" id="pmG13Max" /></div>
+                  <div class="field"><label>13代 闲鱼参考 (¥)</label><input type="number" id="pmG13Ref" /></div>
+                  <div class="field"><label>12代 目标上限 (¥)</label><input type="number" id="pmG12Max" /></div>
+                  <div class="field"><label>12代 闲鱼参考 (¥)</label><input type="number" id="pmG12Ref" /></div>
+                  <div class="field"><label>11代 目标上限 (¥)</label><input type="number" id="pmG11Max" /></div>
+                  <div class="field"><label>11代 闲鱼参考 (¥)</label><input type="number" id="pmG11Ref" /></div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
+              <button class="btn btn-sm btn-danger" id="btnDeleteProfile">🗑️ 删除此商品</button>
+              <button class="btn btn-sm btn-primary" id="btnApplyForm">✓ 暂存当前商品修改</button>
+            </div>
+          </div>
+
+          <!-- Mobile GitHub Direct Save Panel (shown only on GitHub Pages) -->
+          <div class="gh-mobile-box" id="ghMobileBox" style="display:none;">
+            <div style="font-weight:600;margin-bottom:5px;">📱 手机端直接修改并同步到云端（仅保存在你手机浏览器里，绝不上传）</div>
+            <div style="font-size:11.5px;opacity:0.9;margin-bottom:8px;">
+              去 <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" style="color:#93c5fd;">GitHub 生成细粒度 Token</a>（只选仓库 <code id="ghRepoLabel">bianfu69-cell/111</code>，勾选 <code>Contents: Read and write</code> 和 <code>Actions: Read and write</code>），粘贴在下面一次，以后就能直接在手机上随时加/改商品并立刻触发云端扫描！
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <input type="password" id="ghPatInput" placeholder="粘贴 github_pat_... (仅存本机浏览器)" style="flex:1;min-width:190px;background:var(--bg);border:1px solid var(--border-light);color:var(--text);border-radius:7px;padding:7px 9px;font-size:12px;" />
+              <button class="btn btn-sm" id="btnSavePat">记住 Token</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <span style="font-size:12px;color:var(--text-muted);" id="pmFooterHint">修改完点右侧保存生效</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn" id="btnCancelPm">取消</button>
+          <button class="btn btn-primary" id="btnSaveProfilesLocal">💾 保存并立即扫描</button>
+          <button class="btn btn-green" id="btnSaveProfilesCloud">☁️ 保存并同步到 GitHub 云端</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Global Settings & Push Notifications Modal (Local Server Mode) -->
   <div class="modal-backdrop" id="settingsModal">
     <div class="modal">
       <div class="modal-header">
-        <h2>⚙️ 捡漏预算、成本模型与手机推送设置</h2>
+        <h2>⚙️ 全局汇率、代拍费与手机推送设置</h2>
         <button class="btn btn-sm" id="btnCloseModal">关闭 ✕</button>
       </div>
 
       <div class="form-section">
-        <h3>1. 各代目标到手预算（折合 512GB 未税人民币）</h3>
-        <div class="form-grid">
-          <div class="field"><label>13代 目标上限 (¥)</label><input type="number" id="cfgGen13Max" /></div>
-          <div class="field"><label>13代 闲鱼参考价 (¥)</label><input type="number" id="cfgGen13Ref" /></div>
-          <div class="field"><label>12代 目标上限 (¥)</label><input type="number" id="cfgGen12Max" /></div>
-          <div class="field"><label>12代 闲鱼参考价 (¥)</label><input type="number" id="cfgGen12Ref" /></div>
-          <div class="field"><label>11代 目标上限 (¥)</label><input type="number" id="cfgGen11Max" /></div>
-          <div class="field"><label>11代 闲鱼参考价 (¥)</label><input type="number" id="cfgGen11Ref" /></div>
-        </div>
-      </div>
-
-      <div class="form-section">
-        <h3>2. 日淘任意门落地成本参数</h3>
+        <h3>1. 日淘任意门通用成本参数（所有商品共用）</h3>
         <div class="form-grid">
           <div class="field"><label>任意门汇损加成 (%)</label><input type="number" step="0.1" id="cfgSpread" /></div>
-          <div class="field"><label>任意门代拍费 (日元)</label><input type="number" id="cfgDoorzoFee" /></div>
-          <div class="field"><label>EMS 国际运费+加固 (日元)</label><input type="number" id="cfgIntlShip" /></div>
-          <div class="field"><label>默认日内运费 (日元,无标注时)</label><input type="number" id="cfgDomShip" /></div>
-          <div class="field"><label>256G→512G 换盘折算差价 (¥)</label><input type="number" id="cfgSsdDiff" /></div>
-          <div class="field"><label>后台自动扫描间隔 (分钟)</label><input type="number" id="cfgPollMin" /></div>
-          <div class="field"><label>快结拍推送窗口 (分钟)</label><input type="number" id="cfgAlertWin" /></div>
-          <div class="field"><label>最低捡漏评分才推送 (0-100)</label><input type="number" id="cfgMinScore" /></div>
+          <div class="field"><label>任意门代拍费 (日元/单)</label><input type="number" id="cfgDoorzoFee" /></div>
+          <div class="field"><label>本地后台自动扫描间隔 (分钟)</label><input type="number" id="cfgPollMin" /></div>
+          <div class="field"><label>同商品推送冷却时间 (分钟)</label><input type="number" id="cfgCooldown" /></div>
         </div>
       </div>
 
       <div class="form-section">
-        <h3>3. 手机自动推送通道（填任意一个即可，推荐微信 PushPlus 或 iPhone Bark）</h3>
+        <h3>2. 本地手机/桌面推送通道（云端推送请在 GitHub Secrets 配置）</h3>
         <div class="form-grid">
-          <div class="field"><label>微信 PushPlus Token (pushplus.plus 免费)</label><input type="text" id="cfgPushPlus" placeholder="填 Token 即可微信收推送" /></div>
-          <div class="field"><label>微信 Server酱 SendKey</label><input type="text" id="cfgServerChan" placeholder="SCT..." /></div>
           <div class="field"><label>iPhone Bark 推送地址</label><input type="text" id="cfgBark" placeholder="https://api.day.app/你的Key" /></div>
+          <div class="field"><label>ntfy 主题名 (免费免注册 App)</label><input type="text" id="cfgNtfy" placeholder="如 my-radar-9821" /></div>
+          <div class="field"><label>微信 PushPlus Token</label><input type="text" id="cfgPushPlus" placeholder="选填" /></div>
+          <div class="field"><label>微信 Server酱 SendKey</label><input type="text" id="cfgServerChan" placeholder="选填" /></div>
           <div class="field"><label>飞书机器人 Webhook</label><input type="text" id="cfgFeishu" placeholder="https://open.feishu.cn/..." /></div>
           <div class="field"><label>钉钉机器人 Webhook</label><input type="text" id="cfgDingtalk" placeholder="https://oapi.dingtalk.com/..." /></div>
-          <div class="field"><label>ntfy 主题名 (免费免注册 App)</label><input type="text" id="cfgNtfy" placeholder="如 my-g83-radar-9821" /></div>
         </div>
         <div style="margin-top: 10px;">
           <label class="check-pill"><input type="checkbox" id="cfgWinToast" /> 本地运行时弹出 Windows 桌面通知</label>
         </div>
       </div>
 
-      <div class="form-section">
-        <h3>4. 雅虎日拍监控关键词（每行一个）</h3>
-        <div class="field">
-          <textarea id="cfgQueries"></textarea>
-        </div>
-      </div>
-
       <div class="modal-footer">
-        <button class="btn" id="btnTestNotify">📤 发送测试推送到手机/桌面</button>
+        <button class="btn" id="btnTestNotify">📤 发送测试推送</button>
         <div style="display:flex; gap:8px;">
           <button class="btn" id="btnCancelModal">取消</button>
-          <button class="btn btn-primary" id="btnSaveConfig">💾 保存配置并重新计算</button>
+          <button class="btn btn-primary" id="btnSaveConfig">💾 保存全局设置</button>
         </div>
       </div>
     </div>

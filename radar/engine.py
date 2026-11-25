@@ -1,4 +1,4 @@
-"""Core scan orchestration: fetch -> parse -> score -> persist -> alert -> export."""
+"""Core multi-profile scan orchestration: fetch -> parse -> deep inspect -> persist -> alert -> export."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import time
 from typing import Any
 
 from radar.config import load_config, mask_secrets
-from radar.fetcher import fetch_all_queries, fetch_jpy_cny_rate
+from radar.fetcher import fetch_all_profiles, fetch_jpy_cny_rate
 from radar.inspector import fetch_and_inspect_item
 from radar.notifier import format_deal_alert, send_notification
 from radar.parser import apply_inspection, parse_yahoo_item
@@ -20,56 +20,74 @@ from radar.storage import (
     save_cached_inspection,
     save_latest_snapshot,
 )
+from radar.templates import list_templates_public
 
 
 def _deep_inspect_candidates(
     parsed: list[dict[str, Any]],
+    profile_map: dict[str, dict[str, Any]],
     cfg: dict[str, Any],
-    max_live_fetches: int = 35,
+    max_total_live_fetches: int = 40,
 ) -> dict[str, int]:
-    """Auto-inspect Yahoo detail pages for promising / under-budget / closing-soon items."""
-    # 1. Apply any already-cached inspections across ALL items (free, instant!)
-    all_ids = [x["auction_id"] for x in parsed]
-    cached = get_cached_inspections(all_ids, ttl_hours=24)
+    """Apply 24h cached inspections across all items, then fetch live for top candidates per profile."""
+    all_ids = list({x["auction_id"] for x in parsed})
+    cat_map = {x["auction_id"]: x["category"] for x in parsed}
+    cached = get_cached_inspections(all_ids, ttl_hours=24, min_version=3, category_map=cat_map)
     cache_hits = 0
     for it in parsed:
         rep = cached.get(it["auction_id"])
         if rep and rep.get("inspected"):
-            apply_inspection(it, rep, cfg)
+            apply_inspection(it, rep, profile_map[it["profile_id"]], cfg)
             cache_hits += 1
 
-    # 2. Pick top uninspected candidates to fetch live:
-    #    Priority 1: ALL alert candidates & under-budget non-junk 16GB+ items
-    #    Priority 2: Top scoring / soonest-ending 16GB+ items (13th/12th/11th gen)
-    priority_list = [
-        x for x in parsed
-        if not x.get("detail_inspected")
-        and not x.get("is_junk")
-        and not x.get("ignored")
-        and x.get("cpu_tier") != "i3"
-        and x.get("generation") in (14, 13, 12, 11)
-        and ((x.get("ram_gb") or 0) >= 16 or x.get("ram_gb") is None)
-    ]
-    priority_list.sort(
-        key=lambda x: (
-            0 if x.get("alert_reason") else (1 if (x.get("under_budget") or x.get("buy_now_under_budget")) else 2),
-            -x["steal_score"],
-            x["remaining_sec"],
+    # Fair per-profile quota so every user-added product gets its top deals inspected
+    active_pids = list({x["profile_id"] for x in parsed})
+    per_profile_quota = max(10, max_total_live_fetches // max(1, len(active_pids)))
+
+    to_fetch_map: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for pid in active_pids:
+        prof = profile_map[pid]
+        lo = prof.get("laptop_options") or {}
+        cands = []
+        for x in parsed:
+            if x["profile_id"] != pid or x.get("detail_inspected") or x.get("is_junk") or x.get("ignored"):
+                continue
+            if x["category"] == "laptop":
+                if lo.get("exclude_i3") and x.get("cpu_tier") == "i3":
+                    continue
+                if lo.get("require_16gb") and x.get("ram_gb") is not None and x["ram_gb"] < 16:
+                    continue
+                gen_rules = lo.get("generation_rules") or {}
+                if gen_rules and not (gen_rules.get(x["gen_key"]) or {}).get("enabled", True):
+                    continue
+            cands.append(x)
+
+        cands.sort(
+            key=lambda x: (
+                0 if x.get("alert_reason") else (1 if (x.get("under_budget") or x.get("buy_now_under_budget")) else 2),
+                -x["steal_score"],
+                x["remaining_sec"],
+            )
         )
-    )
-    to_fetch = priority_list[:max_live_fetches]
+        for it in cands[:per_profile_quota]:
+            key = (it["auction_id"], it["category"])
+            to_fetch_map.setdefault(key, []).append(it)
 
     fetched_ok = 0
-    if to_fetch:
+    if to_fetch_map:
         with ThreadPoolExecutor(max_workers=4) as pool:
-            fut_map = {pool.submit(fetch_and_inspect_item, it["auction_id"]): it for it in to_fetch}
+            fut_map = {
+                pool.submit(fetch_and_inspect_item, aid, cat): (aid, items_list)
+                for (aid, cat), items_list in list(to_fetch_map.items())[:max_total_live_fetches]
+            }
             for fut in as_completed(fut_map):
-                it = fut_map[fut]
+                aid, items_list = fut_map[fut]
                 try:
                     rep = fut.result()
                     if rep and rep.get("inspected"):
-                        save_cached_inspection(it["auction_id"], rep)
-                        apply_inspection(it, rep, cfg)
+                        save_cached_inspection(aid, rep)
+                        for it in items_list:
+                            apply_inspection(it, rep, profile_map[it["profile_id"]], cfg)
                         fetched_ok += 1
                 except Exception:
                     pass
@@ -87,9 +105,11 @@ def run_scan(
     send_alerts: bool = True,
     export_static: bool = False,
 ) -> dict[str, Any]:
-    """Execute a complete radar scan and return the structured snapshot."""
+    """Execute a complete multi-profile radar scan and return the structured snapshot."""
     started_at = time.time()
     cfg = cfg or load_config(apply_env=True)
+    profiles = cfg.get("profiles") or []
+    profile_map = {p["id"]: p for p in profiles}
     cost_model = cfg.get("cost_model", {})
 
     # 1. Exchange rate
@@ -101,27 +121,30 @@ def run_scan(
     spread = float(cost_model.get("fx_spread_pct", 3.5)) / 100.0
     effective_fx = round(fx_base * (1.0 + spread), 6)
 
-    # 2. Fetch Yahoo Auctions listings across all queries
-    raw_map, query_stats = fetch_all_queries(cfg)
+    # 2. Fetch Yahoo Auctions listings across all enabled profiles
+    per_profile_raw, query_stats = fetch_all_profiles(profiles)
+    total_raw = sum(len(b) for b in per_profile_raw.values())
 
-    # 3. Parse, score, enrich
+    # 3. Parse & score per profile
     now_utc = dt.datetime.now(dt.timezone.utc)
     marks = get_all_marks()
     parsed: list[dict[str, Any]] = []
-    for raw in raw_map.values():
-        item = parse_yahoo_item(raw, cfg, fx_rate_base=fx_base, now_utc=now_utc)
-        if not item:
-            continue
-        mark = marks.get(item["auction_id"], {})
-        item["starred"] = bool(mark.get("starred", False))
-        item["ignored"] = bool(mark.get("ignored", False))
-        item["note"] = mark.get("note", "")
-        parsed.append(item)
+    for pid, raw_bucket in per_profile_raw.items():
+        prof = profile_map[pid]
+        for raw in raw_bucket.values():
+            item = parse_yahoo_item(raw, prof, cfg, fx_rate_base=fx_base, now_utc=now_utc)
+            if not item:
+                continue
+            mark = marks.get(item["auction_id"], {})
+            item["starred"] = bool(mark.get("starred", False))
+            item["ignored"] = bool(mark.get("ignored", False))
+            item["note"] = mark.get("note", "")
+            parsed.append(item)
 
-    # 4. Stage 2: Deep-inspect Yahoo item detail descriptions for top candidates & all alert candidates
-    inspect_stats = _deep_inspect_candidates(parsed, cfg, max_live_fetches=35)
+    # 4. Stage 2: Deep-inspect Yahoo item detail descriptions per profile
+    inspect_stats = _deep_inspect_candidates(parsed, profile_map, cfg, max_total_live_fetches=40)
 
-    # 5. Record price history & compute delta
+    # 5. Record price history
     delta_map = record_price_snapshot(parsed)
     for it in parsed:
         d = delta_map.get(it["auction_id"], {})
@@ -129,31 +152,48 @@ def run_scan(
         it["price_delta_jpy"] = d.get("price_delta_jpy", 0)
         it["is_new_seen"] = bool(d.get("is_new_seen", False))
 
-    # Sort primarily by steal_score DESC, then effective_512_cny ASC
     parsed.sort(key=lambda x: (-x["steal_score"], x["effective_512_cny"], x["remaining_sec"]))
 
-    # 6. Summary metrics (exclude both title-junk AND detail-page severe hardware defects!)
-    active_non_junk = [x for x in parsed if not x["is_junk"] and not x.get("has_severe_defect") and not x["ignored"]]
-    hot_alerts = [
-        x for x in active_non_junk
-        if x.get("alert_reason") in ("buy_now", "ending_soon")
-    ]
+    # 6. Build per-profile summaries & overall summary
+    active_clean = [x for x in parsed if not x["is_junk"] and not x.get("has_severe_defect") and not x["ignored"]]
+    hot_alerts = [x for x in active_clean if x.get("alert_reason") in ("buy_now", "ending_soon")]
+
+    profile_summaries: list[dict[str, Any]] = []
+    for p in profiles:
+        pid = p["id"]
+        p_all = [x for x in parsed if x["profile_id"] == pid and not x["ignored"]]
+        p_clean = [x for x in active_clean if x["profile_id"] == pid]
+        p_under = [x for x in p_clean if x["under_budget"] or x["buy_now_under_budget"]]
+        profile_summaries.append({
+            "id": pid,
+            "name": p["name"],
+            "icon": p.get("icon", "📦"),
+            "category": p.get("category", "general"),
+            "enabled": bool(p.get("enabled", True)),
+            "target_cny": p.get("target_cny", 0),
+            "ref_cny": p.get("ref_cny", 0),
+            "tax_included_shipping": bool(p.get("tax_included_shipping", False)),
+            "total_count": len(p_all),
+            "clean_count": len(p_clean),
+            "under_budget_count": len(p_under),
+            "ending_soon_count": sum(1 for x in p_clean if 0 < x["remaining_sec"] <= 10800),
+            "severe_caught_count": sum(1 for x in p_all if x.get("detail_severe_tags")),
+            "lowest_cny": min((x["effective_512_cny"] for x in p_clean), default=None),
+        })
 
     summary = {
-        "total_raw": len(raw_map),
+        "total_raw": total_raw,
         "total_parsed": len(parsed),
-        "total_clean": len(active_non_junk),
-        "gen13_count": sum(1 for x in active_non_junk if x["generation"] == 13),
-        "gen12_count": sum(1 for x in active_non_junk if x["generation"] == 12),
-        "gen11_count": sum(1 for x in active_non_junk if x["generation"] == 11),
-        "under_budget_count": sum(1 for x in active_non_junk if x["under_budget"] or x["buy_now_under_budget"]),
-        "ending_soon_count": sum(1 for x in active_non_junk if 0 < x["remaining_sec"] <= 10800),
+        "total_clean": len(active_clean),
+        "profile_count": sum(1 for p in profiles if p.get("enabled", True)),
+        "under_budget_count": sum(1 for x in active_clean if x["under_budget"] or x["buy_now_under_budget"]),
+        "ending_soon_count": sum(1 for x in active_clean if 0 < x["remaining_sec"] <= 10800),
         "hot_alert_count": len(hot_alerts),
         "detail_inspected_count": inspect_stats["total_inspected"],
         "severe_caught_count": inspect_stats["severe_caught"],
     }
 
-    # 7. Trigger notifications for new hot deals (guaranteed detail-inspected & free of severe defects!)
+    # 7. Trigger deduplicated notifications grouped neatly
     alert_dispatch: dict[str, Any] = {"candidates": len(hot_alerts), "triggered": 0, "channels": {}}
     if send_alerts and hot_alerts:
         cooldown = int(cfg.get("filters", {}).get("alert_cooldown_minutes", 120))
@@ -161,12 +201,14 @@ def run_scan(
         alert_dispatch["triggered"] = len(fresh)
         if fresh:
             title, md_body, plain_body, top_link, compact_body = format_deal_alert(fresh)
+            group_name = f"日淘雷达·{fresh[0]['profile_name']}" if len({x["profile_id"] for x in fresh}) == 1 else "日淘多品类雷达"
             alert_dispatch["channels"] = send_notification(
-                cfg, title, md_body, plain_body, link_url=top_link, compact_body=compact_body
+                cfg, title, md_body, plain_body, link_url=top_link, compact_body=compact_body, group_name=group_name
             )
 
     now_cst = now_utc.astimezone(dt.timezone(dt.timedelta(hours=8)))
     snapshot = {
+        "version": 2,
         "scanned_at": now_cst.strftime("%Y-%m-%d %H:%M:%S"),
         "scanned_ts": int(time.time()),
         "duration_sec": round(time.time() - started_at, 2),
@@ -174,6 +216,9 @@ def run_scan(
         "fx_effective": effective_fx,
         "fx_source": fx_source,
         "summary": summary,
+        "profiles": profiles,
+        "profile_summaries": profile_summaries,
+        "templates": list_templates_public(),
         "inspect_stats": inspect_stats,
         "query_stats": query_stats,
         "alert_dispatch": alert_dispatch,

@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "profiles": [
+    {
+      "id": "dynabook_g83",
+      "name": "东芝 Dynabook G83",
+      "icon": "💻",
+      "category": "laptop",
+      "special_preset": "dynabook_g83",
+      "enabled": true,
+      "queries": [
+        "dynabook G83/LY",
+        "dynabook G83/LW",
+        "dynabook G83/MY",
+        "dynabook G83/KW",
+        "dynabook G83/KV",
+        "dynabook G83/KY",
+        "dynabook G83 16GB",
+        "dynabook G83 1340P"
+      ],
+      "extra_low_price_queries": [
+        "dynabook G83/LY",
+        "dynabook G83/LW"
+      ],
+      "must_include": [
+        "g83"
+      ],
+      "exclude_keywords": [],
+      "yahoo_category_id": "23412",
+      "max_items_per_query": 50,
+      "target_cny": 2000,
+      "ref_cny": 2400,
+      "intl_shipping_jpy": 4500,
+      "default_domestic_shipping_jpy": 1200,
+      "customs_tax_rate": 0.13,
+      "tax_included_shipping": false,
+      "alert_enabled": true,
+      "alert_ending_within_minutes": 180,
+      "alert_buy_now_immediately": true,
+      "alert_min_steal_score": 55,
+      "laptop_options": {
+        "require_16gb": true,
+        "allow_unknown_ram": false,
+        "exclude_i3": true,
+        "ssd_upgrade_256_to_512_cny": 180,
+        "generation_rules": {
+          "14": {
+            "enabled": true,
+            "label": "Core Ultra/14代",
+            "max_effective_512_cny": 2200,
+            "xianyu_ref_cny": 2800
+          },
+          "13": {
+            "enabled": true,
+            "label": "13代 (主力目标)",
+            "max_effective_512_cny": 2000,
+            "xianyu_ref_cny": 2400
+          },
+          "12": {
+            "enabled": true,
+            "label": "12代 (超值备选)",
+            "max_effective_512_cny": 1450,
+            "xianyu_ref_cny": 1850
+          },
+          "11": {
+            "enabled": true,
+            "label": "11代 (白菜捡漏)",
+            "max_effective_512_cny": 1000,
+            "xianyu_ref_cny": 1350
+          },
+          "other": {
+            "enabled": false,
+            "label": "更旧/未知代数",
+            "max_effective_512_cny": 800,
+            "xianyu_ref_cny": 1000
+          }
+        }
+      }
+    }
+  ]
+}

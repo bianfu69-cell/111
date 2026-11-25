@@ -66,8 +66,13 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def get_cached_inspections(auction_ids: list[str], ttl_hours: int = 24, min_version: int = 2) -> dict[str, dict[str, Any]]:
-    """Return cached detail inspection reports younger than ttl_hours matching current inspector version."""
+def get_cached_inspections(
+    auction_ids: list[str],
+    ttl_hours: int = 24,
+    min_version: int = 3,
+    category_map: dict[str, str] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Return cached detail inspection reports younger than ttl_hours matching inspector version & category."""
     if not auction_ids:
         return {}
     cutoff = int(time.time()) - ttl_hours * 3600
@@ -81,8 +86,11 @@ def get_cached_inspections(auction_ids: list[str], ttl_hours: int = 24, min_vers
         for r in rows:
             try:
                 rep = json.loads(r["report_json"])
+                aid = r["auction_id"]
+                wanted_cat = (category_map or {}).get(aid)
                 if int(rep.get("version") or 1) >= min_version:
-                    result[r["auction_id"]] = rep
+                    if not wanted_cat or rep.get("category") == wanted_cat:
+                        result[aid] = rep
             except Exception:
                 pass
     return result
