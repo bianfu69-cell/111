@@ -107,15 +107,25 @@ def send_notification(
     bark_url = (notif.get("bark_url") or "").strip().rstrip("/")
     if bark_url:
         try:
+            # Normalize bare key, root URL, or Bark App's sample URL with trailing sample text
+            if not bark_url.startswith("http"):
+                endpoint = f"https://api.day.app/{urllib.parse.quote(bark_url)}"
+            else:
+                parsed = urllib.parse.urlparse(bark_url)
+                segs = [s for s in parsed.path.split("/") if s]
+                device_key = segs[0] if segs else ""
+                endpoint = f"{parsed.scheme}://{parsed.netloc}/{device_key}" if device_key else bark_url
+
             payload: dict[str, Any] = {
                 "title": title,
-                "body": plain_body[:600],
+                "body": plain_body[:700],
                 "group": "G83捡漏雷达",
                 "sound": "bell",
+                "level": "timeSensitive",
             }
             if link_url:
                 payload["url"] = link_url
-            ok, info = _post_json(bark_url, payload)
+            ok, info = _post_json(endpoint, payload)
             results["bark"] = {"ok": ok, "info": info}
         except Exception as exc:
             results["bark"] = {"ok": False, "info": str(exc)}
@@ -149,26 +159,28 @@ def send_notification(
         except Exception as exc:
             results["dingtalk"] = {"ok": False, "info": str(exc)}
 
-    ntfy_topic = (notif.get("ntfy_topic") or "").strip()
+    ntfy_topic = (notif.get("ntfy_topic") or "").strip().rstrip("/")
     if ntfy_topic:
         try:
-            ntfy_url = ntfy_topic if ntfy_topic.startswith("http") else f"https://ntfy.sh/{urllib.parse.quote(ntfy_topic)}"
-            headers = {
-                "Title": title.encode("ascii", "ignore").decode("ascii") or "G83 Deal Alert",
-                "Priority": "high",
-                "Tags": "laptop,moneybag",
-                "User-Agent": "G83-Radar/1.0",
+            if ntfy_topic.startswith("http"):
+                parsed = urllib.parse.urlparse(ntfy_topic)
+                base_url = f"{parsed.scheme}://{parsed.netloc}"
+                topic_name = parsed.path.strip("/").split("/")[-1]
+            else:
+                base_url = "https://ntfy.sh"
+                topic_name = ntfy_topic
+
+            payload_ntfy: dict[str, Any] = {
+                "topic": topic_name,
+                "title": title,
+                "message": plain_body[:1200],
+                "priority": 4,
+                "tags": ["laptop", "moneybag"],
             }
             if link_url:
-                headers["Click"] = link_url
-            req = urllib.request.Request(
-                ntfy_url,
-                data=f"{title}\n{plain_body}".encode("utf-8"),
-                headers=headers,
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=12) as resp:
-                results["ntfy"] = {"ok": 200 <= resp.status < 300, "info": f"HTTP {resp.status}"}
+                payload_ntfy["click"] = link_url
+            ok, info = _post_json(base_url, payload_ntfy)
+            results["ntfy"] = {"ok": ok, "info": info}
         except Exception as exc:
             results["ntfy"] = {"ok": False, "info": str(exc)}
 
