@@ -1,0 +1,58 @@
+name: G83 Yahoo Radar 24x7 Monitor
+
+on:
+  schedule:
+    # Run every 15 minutes (UTC)
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: g83-radar-scan
+  cancel-in-progress: false
+
+jobs:
+  scan-and-notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore detail inspection cache
+        uses: actions/cache@v4
+        with:
+          path: data/radar.db
+          key: g83-radar-db-${{ github.run_id }}
+          restore-keys: |
+            g83-radar-db-
+
+      - name: Run Yahoo Auctions G83 Radar scan
+        env:
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          BARK_URL: ${{ secrets.BARK_URL }}
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          DINGTALK_WEBHOOK: ${{ secrets.DINGTALK_WEBHOOK }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scan_once.py --export-static
+
+      - name: Commit updated GitHub Pages ranking & alert state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/
+          if [ -f data/alert_state.json ]; then git add data/alert_state.json; fi
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update G83 radar snapshot"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}" || true
+            git push
+          fi

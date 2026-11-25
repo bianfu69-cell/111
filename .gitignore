@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Keep local secrets & SQLite database private, but allow data/alert_state.json for cloud dedup
+data/config.json
+data/radar.db
+data/latest.json
