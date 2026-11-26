@@ -5,9 +5,13 @@ from __future__ import annotations
 import html as html_lib
 import json
 import re
+import threading
 import time
 import urllib.request
 from typing import Any
+
+_FLEA_LOCK = threading.Lock()
+_FLEA_LAST_TS = 0.0
 
 from radar.templates import (
     UNIVERSAL_MINOR_RULES,
@@ -323,8 +327,19 @@ def fetch_and_inspect_item(auction_id: str, category: str = "general") -> dict[s
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=16) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
+        if is_flea:
+            # Polite serialization for PayPay Flea Market to avoid HTTP 429 rate-limits
+            global _FLEA_LAST_TS
+            with _FLEA_LOCK:
+                wait = 1.4 - (time.time() - _FLEA_LAST_TS)
+                if wait > 0:
+                    time.sleep(wait)
+                with urllib.request.urlopen(req, timeout=16) as resp:
+                    body = resp.read().decode("utf-8", errors="replace")
+                _FLEA_LAST_TS = time.time()
+        else:
+            with urllib.request.urlopen(req, timeout=16) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
     except Exception as exc:
         return {
             "version": INSPECTOR_VERSION,
