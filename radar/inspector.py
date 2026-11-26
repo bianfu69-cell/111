@@ -81,7 +81,7 @@ DISCLAIMER_PATTERNS = [
 NEGATION_PATTERNS = [
     r"(?:は|も|等)?(?:ありません|ありませんでした|ございません|見当たりません|見られません|感じられません|認められません|確認できませんでした)",
     r"[:：]\s*(?:なし|無し|無\b|ゼロ|0|ありません|ございません|良好|正常|問題なし|ok|○)\s*$",
-    r"(?:割れ|破損|ヒビ|ひび|ムラ|シミ|抜け|不良|異常|欠品|欠損|ガタ|緩み|膨張|傷|キズ|問題|不具合|カビ|クモリ|曇り|ドリフト|焼け|ベタつき|破れ|剥がれ)\s*[:：/\- ]*(?:なし|無し|無\b|ゼロ|0)",
+    r"(?:割れ|破損|ヒビ|ひび|ムラ|シミ|抜け|不良|異常|欠品|欠損|ガタ|緩み|膨張|傷|キズ|問題|不具合|カビ|クモリ|曇り|ドリフト|焼け|ベタつき|破れ|剥がれ|チャタリング|ダブルクリック|空回り|逆回転)\s*[:：/\- ]*(?:なし|無し|無\b|ゼロ|0)",
     r"問題なく",
     r"正常に動作",
     r"良好です",
@@ -307,8 +307,13 @@ def analyze_description(
 
 
 def fetch_and_inspect_item(auction_id: str, category: str = "general") -> dict[str, Any]:
-    """Fetch Yahoo Auctions detail page and return category-aware deep inspection report."""
-    url = f"https://auctions.yahoo.co.jp/jp/auction/{auction_id}"
+    """Fetch Yahoo Auctions OR PayPay Flea Market (z...) detail page and inspect description."""
+    is_flea = auction_id.startswith("z")
+    url = (
+        f"https://paypayfleamarket.yahoo.co.jp/item/{auction_id}"
+        if is_flea
+        else f"https://auctions.yahoo.co.jp/jp/auction/{auction_id}"
+    )
     req = urllib.request.Request(
         url,
         headers={
@@ -353,6 +358,24 @@ def fetch_and_inspect_item(auction_id: str, category: str = "general") -> dict[s
 
     try:
         data = json.loads(m.group(1))
+        if is_flea:
+            item = (
+                data.get("props", {})
+                .get("initialState", {})
+                .get("itemsState", {})
+                .get("items", {})
+                .get("item", {})
+            )
+            desc_plain = item.get("description") or ""
+            lines = [ln.strip() for ln in str(desc_plain).splitlines() if ln.strip()]
+            imgs = item.get("images") or item.get("imageUrls") or []
+            return analyze_description(
+                lines,
+                category=category,
+                is_auto_extend=False,
+                photo_count=len(imgs) if isinstance(imgs, list) else 0,
+            )
+
         item = data["props"]["pageProps"]["initialState"]["item"]["detail"]["item"]
         desc_html = item.get("descriptionHtml") or ""
         desc_plain = item.get("description") or ""

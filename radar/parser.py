@@ -192,8 +192,9 @@ def _format_remaining(seconds: float) -> str:
     return f"{days}天{rem_h}小时"
 
 
-def make_doorzo_url(yahoo_url: str) -> str:
-    return f"https://www.doorzo.com/zh-hans/mall/yahoo/detail/{yahoo_url.encode('utf-8').hex()}"
+def make_doorzo_url(source_url: str, is_fleamarket: bool = False) -> str:
+    mall = "paypay" if is_fleamarket else "yahoo"
+    return f"https://www.doorzo.com/zh-hans/mall/{mall}/detail/{source_url.encode('utf-8').hex()}"
 
 
 def calc_landed_cost(
@@ -492,8 +493,13 @@ def parse_yahoo_item(
         elif under_budget and 0 < rem_min <= alert_win and steal_score >= min_alert_score:
             alert_reason = "ending_soon"
 
-    yahoo_url = f"https://auctions.yahoo.co.jp/jp/auction/{auction_id}"
-    doorzo_url = make_doorzo_url(yahoo_url)
+    is_fleamarket = bool(raw.get("isFleamarketItem")) or auction_id.startswith("z")
+    yahoo_url = (
+        f"https://paypayfleamarket.yahoo.co.jp/item/{auction_id}"
+        if is_fleamarket
+        else f"https://auctions.yahoo.co.jp/jp/auction/{auction_id}"
+    )
+    doorzo_url = make_doorzo_url(yahoo_url, is_fleamarket=is_fleamarket)
 
     return {
         "item_key": f"{profile['id']}:{auction_id}",
