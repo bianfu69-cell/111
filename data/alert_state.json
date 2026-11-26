@@ -1,12 +1,17 @@
 {
   "z710389400": {
-    "last_alert_at": 1795683032,
+    "last_alert_at": 1795691591,
     "last_price_jpy": 4500,
     "last_reason": "buy_now"
   },
   "c1252966939": {
     "last_alert_at": 1795687693,
     "last_price_jpy": 22933,
+    "last_reason": "ending_soon"
+  },
+  "c1252972563": {
+    "last_alert_at": 1795691591,
+    "last_price_jpy": 16435,
     "last_reason": "ending_soon"
   }
 }
