@@ -23,5 +23,10 @@
     "last_alert_at": 1795768931,
     "last_price_jpy": 1980,
     "last_reason": "ending_soon"
+  },
+  "1253435840": {
+    "last_alert_at": 1795772965,
+    "last_price_jpy": 22000,
+    "last_reason": "ending_soon"
   }
 }
