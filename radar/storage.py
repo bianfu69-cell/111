@@ -69,7 +69,7 @@ def _connect() -> sqlite3.Connection:
 def get_cached_inspections(
     auction_ids: list[str],
     ttl_hours: int = 24,
-    min_version: int = 3,
+    min_version: int = 4,
     category_map: dict[str, str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Return cached detail inspection reports younger than ttl_hours matching inspector version & category."""

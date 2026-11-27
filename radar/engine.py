@@ -32,7 +32,7 @@ def _deep_inspect_candidates(
     """Apply 24h cached inspections across all items, then fetch live for top candidates per profile."""
     all_ids = list({x["auction_id"] for x in parsed})
     cat_map = {x["auction_id"]: x["category"] for x in parsed}
-    cached = get_cached_inspections(all_ids, ttl_hours=24, min_version=3, category_map=cat_map)
+    cached = get_cached_inspections(all_ids, ttl_hours=24, min_version=4, category_map=cat_map)
     cache_hits = 0
     for it in parsed:
         rep = cached.get(it["auction_id"])
