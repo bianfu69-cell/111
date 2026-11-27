@@ -82,17 +82,31 @@ def _normalize_text(text: str) -> str:
     return "".join(out)
 
 
-def _detect_model_suffix(norm_title: str) -> str:
+def _detect_model_suffix(norm_title: str) -> tuple[str, int]:
+    """Return (display_model_tag, inferred_gen) for Dynabook G83 or Fujitsu LIFEBOOK U-series."""
     m = re.search(r"G83\s*[/\- ]\s*([A-Z]{1,2})\b", norm_title, re.IGNORECASE)
     if m:
-        return m.group(1).upper()
+        suf = m.group(1).upper()
+        return f"G83/{suf}", MODEL_SUFFIX_GEN.get(suf, 0)
     m2 = re.search(r"G83([A-Z]{2})\b", norm_title, re.IGNORECASE)
     if m2 and m2.group(1).upper() in MODEL_SUFFIX_GEN:
-        return m2.group(1).upper()
-    return ""
+        suf = m2.group(1).upper()
+        return f"G83/{suf}", MODEL_SUFFIX_GEN[suf]
+
+    # Fujitsu LIFEBOOK U9313 / U9311 / U7313 / U9312 / U9413 / U7314
+    mf = re.search(r"\b(U[79][34](1[1234])X?)\b", norm_title, re.IGNORECASE)
+    if mf:
+        model_code = mf.group(1).upper()
+        gen_num = int(mf.group(2))
+        return model_code, gen_num
+    return "", 0
 
 
-def _detect_cpu_and_gen(norm_title: str, model_suffix: str) -> tuple[int, str, str, bool]:
+def _detect_cpu_and_gen(norm_title: str, inferred_gen: int = 0) -> tuple[int, str, str, bool]:
+    # Low-end Celeron / Pentium detection (common trap on U9311!)
+    if re.search(r"\b(?:celeron|pentium|6305)\b", norm_title, re.IGNORECASE):
+        return inferred_gen, "celeron", "Celeron(低配)", False
+
     # Apple Silicon detection for MacBook profiles
     m_apple = re.search(r"\b(M[1234]\s*(?:Pro|Max|Ultra)?)\b", norm_title, re.IGNORECASE)
     if m_apple and any(w in norm_title.lower() for w in ("macbook", "mac", "apple", "air", "pro")):
@@ -114,18 +128,27 @@ def _detect_cpu_and_gen(norm_title: str, model_suffix: str) -> tuple[int, str, s
     mg = re.search(r"第?\s*(14|13|12|11|10|8)\s*世代", norm_title)
     if mg:
         gen = int(mg.group(1))
-    elif model_suffix in MODEL_SUFFIX_GEN:
-        gen = MODEL_SUFFIX_GEN[model_suffix]
+    elif inferred_gen:
+        gen = inferred_gen
 
     tier_m = re.search(r"core\s*(i[3579])", norm_title, re.IGNORECASE)
     tier = tier_m.group(1).lower() if tier_m else ""
 
-    mod_m = re.search(r"\b(1340P|1334U|1345U|1355U|1360P|1315U|1240P|1235U|1245U|1255U|1135G7|1145G7|1165G7)\b", norm_title, re.IGNORECASE)
+    mod_m = re.search(
+        r"\b(1370P|1360P|1350P|1340P|1365U|1355U|1345U|1335U|1334U|1315U|1270P|1260P|1240P|1265U|1255U|1245U|1235U|1185G7|1165G7|1145G7|1135G7)\b",
+        norm_title,
+        re.IGNORECASE,
+    )
     if mod_m:
         mod = mod_m.group(1).upper()
         gen = int(mod[:2])
         if not tier:
-            tier = "i3" if mod == "1315U" else ("i7" if mod in ("1355U", "1360P", "1255U", "1165G7") else "i5")
+            if mod == "1315U":
+                tier = "i3"
+            elif mod in ("1370P", "1360P", "1365U", "1355U", "1270P", "1260P", "1265U", "1255U", "1185G7", "1165G7"):
+                tier = "i7"
+            else:
+                tier = "i5"
         return gen, tier, f"{tier}-{mod}", mod.endswith("P")
 
     # Ryzen detection
@@ -141,13 +164,13 @@ def _detect_ram_gb(norm_title: str) -> int | None:
     explicit = [
         r"(?:メモリ|ﾒﾓﾘ|ram|mem)\s*[:：/\- ]?\s*(64|32|24|16|8|4)(?:\.\d+)?\s*g(?:b)?\b",
         r"\b(64|32|24|16|8)gb\s*(?:ram|メモリ|lpddr|ddr)",
-        r"[/\s](64|32|16|8)g(?:b)?\s*[/\s]\s*(?:nvme|ssd|m\.2)?\s*(?:128|256|512|1000|1024|1tb)",
+        r"[/\s+](64|32|24|16|8)g(?:b)?\s*[/\s+]\s*(?:nvme|ssd|m\.2)?\s*(?:128|256|512|1000|1024|1tb)",
     ]
     for pat in explicit:
         m = re.search(pat, norm_title, re.IGNORECASE)
         if m:
             return int(m.group(1))
-    for m in re.finditer(r"(?<![a-z0-9])(64|32|16|8)\s*gb\b", norm_title, re.IGNORECASE):
+    for m in re.finditer(r"(?<![a-z0-9])(64|32|24|16|8)\s*gb\b", norm_title, re.IGNORECASE):
         prefix = norm_title[max(0, m.start() - 10):m.start()].lower()
         if not any(tok in prefix for tok in ("ssd", "nvme", "hdd", "emmc")):
             return int(m.group(1))
@@ -298,15 +321,16 @@ def parse_yahoo_item(
     # Specs parsing (laptop-specific vs universal)
     is_laptop = category == "laptop"
     if is_laptop:
-        model_suffix = _detect_model_suffix(norm_title)
-        gen, cpu_tier, cpu_model, is_p_series = _detect_cpu_and_gen(norm_title, model_suffix)
+        model_tag, inferred_gen = _detect_model_suffix(norm_title)
+        model_suffix = model_tag
+        gen, cpu_tier, cpu_model, is_p_series = _detect_cpu_and_gen(norm_title, inferred_gen)
         ram_gb = _detect_ram_gb(norm_title)
         ssd_gb = _detect_ssd_gb(norm_title)
         gen_label_short = (
             "Ultra/14代" if gen == 14 else (f"{gen}代" if gen in (13, 12, 11, 10, 8) else ("Apple Silicon" if cpu_tier == "apple" else "笔记本"))
         )
-        if model_suffix:
-            gen_label_short = f"{gen_label_short} G83/{model_suffix}"
+        if model_tag:
+            gen_label_short = f"{gen_label_short} {model_tag}"
     else:
         model_suffix = ""
         gen, cpu_tier, cpu_model, is_p_series = 0, "", "", False
@@ -435,19 +459,28 @@ def parse_yahoo_item(
     if not is_store:
         score += 6.0
 
-    # Laptop spec bonuses
+    # Laptop spec bonuses (strong reward for high-tier i7 / P-series CPUs like i7-1370P, i5-1350P, i5-1340P)
     if is_laptop:
-        if gen == 13 and is_p_series:
-            score += 8.0
-        elif gen == 13 and cpu_tier in ("i5", "i7"):
+        if is_p_series and cpu_tier == "i7":
+            score += 14.0
+        elif is_p_series:
+            score += 10.0
+        elif cpu_tier == "i7":
+            score += 7.0
+        elif gen >= 13 and cpu_tier == "i5":
             score += 5.0
-        if ram_gb and ram_gb >= 16:
+
+        if ram_gb and ram_gb >= 24:
+            score += 7.0
+        elif ram_gb and ram_gb >= 16:
             score += 4.0
         elif ram_gb == 8 and lo.get("require_16gb"):
             score -= 30.0
         if ssd_gb and ssd_gb >= 512:
             score += 4.0
-        if cpu_tier == "i3" and lo.get("exclude_i3"):
+        if cpu_tier == "celeron":
+            score -= 35.0
+        elif cpu_tier == "i3" and lo.get("exclude_i3"):
             score -= 18.0
         if not gen_enabled:
             score -= 28.0
@@ -483,7 +516,7 @@ def parse_yahoo_item(
         if lo.get("require_16gb"):
             ram_ok = (ram_gb is not None and ram_gb >= 16) or (bool(lo.get("allow_unknown_ram")) and ram_gb is None)
         if lo.get("exclude_i3"):
-            i3_ok = cpu_tier != "i3"
+            i3_ok = cpu_tier not in ("i3", "celeron")
 
     min_alert_score = int(profile.get("alert_min_steal_score", 55))
     alert_win = float(profile.get("alert_ending_within_minutes", 180))
